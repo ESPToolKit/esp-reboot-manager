@@ -61,6 +61,12 @@ void setup() {
 }
 ```
 
+## Examples
+- [`basic_reboot_request`](examples/basic_reboot_request/basic_reboot_request.ino): minimal accepted request flow with guard + evaluation callbacks.
+- [`busy_and_retry`](examples/busy_and_retry/busy_and_retry.ino): demonstrates `Busy` submit status and retrying once the manager returns to `Idle`.
+- [`guard_blocking`](examples/guard_blocking/guard_blocking.ino): shows a guard rejecting reboot until a maintenance window opens.
+- [`callback_timeout`](examples/callback_timeout/callback_timeout.ino): demonstrates `CallbackTimeout` behavior when a guard runs longer than `callbackTimeoutMs`.
+
 ## API Summary
 - `bool init(const ESPRebootManagerConfig& config = {})`
 - `void deinit()`
