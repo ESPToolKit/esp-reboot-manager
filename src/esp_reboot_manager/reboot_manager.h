@@ -19,8 +19,9 @@ enum class RebootRequestStatus : uint8_t {
     Idle = 0,
     Requested = 1,
     Evaluating = 2,
-    Delaying = 3,
-    Rebooting = 4,
+    Deferred = 3,
+    Delaying = 4,
+    Rebooting = 5,
 };
 
 enum class RebootSubmitStatus : uint8_t {
@@ -37,6 +38,7 @@ enum class RebootDecisionCode : uint8_t {
     CallbackTimeout = 2,
     InvalidArgument = 3,
     InternalError = 4,
+    Deferred = 5,
 };
 
 struct RebootRequestContext {
@@ -48,6 +50,8 @@ struct RebootRequestContext {
 
 struct RebootVote {
     bool allow = true;
+    bool defer = false;
+    uint32_t deferTimeoutMs = 0;
     char detail[96] = {};
 };
 
@@ -57,6 +61,7 @@ struct RebootEvaluation {
     RebootDecisionCode code = RebootDecisionCode::InternalError;
     char reason[64] = {};
     uint32_t delayMs = 0;
+    uint32_t deferTimeoutMs = 0;
     char blockerName[32] = {};
     char detail[96] = {};
     uint32_t evaluatedAtMs = 0;

@@ -1,6 +1,6 @@
 # ESPRebootManager
 
-ESPRebootManager is a centralized reboot coordinator for ESP32 projects. Any module can request a reboot, registered guard callbacks vote whether reboot is safe, and one unified evaluation callback reports the final decision.
+ESPRebootManager is a centralized reboot coordinator for ESP32 projects. Any module can request a reboot, registered guard callbacks vote whether reboot is safe, and registered evaluation callbacks report the final decision.
 
 ## CI / Release / License
 [![CI](https://github.com/ESPToolKit/esp-reboot-manager/actions/workflows/ci.yml/badge.svg)](https://github.com/ESPToolKit/esp-reboot-manager/actions/workflows/ci.yml)
@@ -8,8 +8,9 @@ ESPRebootManager is a centralized reboot coordinator for ESP32 projects. Any mod
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE.md)
 
 ## Features
-- Unified guard callback API: `onRebootRequest(...)`.
-- Unified decision event API: `onEvaluation(...)`.
+- Multi-guard callback API: `onRebootRequest(...)`.
+- Multi-evaluation event API: `onEvaluation(...)`.
+- Deferred guard votes: any guard can defer and force evaluation restart from guard #1.
 - Async request handling on a dedicated FreeRTOS task.
 - Single active request policy with deterministic `Busy` responses.
 - Polling support for missed events via `isRebootRequested()`, `rebootStatus()`, and `lastEvaluation()`.
@@ -86,10 +87,19 @@ void setup() {
 - `RebootEvaluation lastEvaluation() const`
 
 ## Status Flow
+Accepted path:
 `Idle -> Requested -> Evaluating -> Delaying -> Rebooting -> Idle`
+
+Deferred path:
+`Idle -> Requested -> Evaluating -> Deferred -> Evaluating -> ...`
 
 If any guard rejects (or times out), the flow is:
 `Idle -> Requested -> Evaluating -> Idle`
+
+## Guard Vote Semantics
+- `allow=true`: guard accepts current pass.
+- `allow=false`: request is blocked immediately and reboot does not proceed.
+- `defer=true`: request is deferred immediately, remaining guards are skipped for the current pass, and evaluation restarts from the first guard after `deferTimeoutMs` (minimum 1ms when omitted/0).
 
 ## License
 MIT - see [LICENSE.md](LICENSE.md).

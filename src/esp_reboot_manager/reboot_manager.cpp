@@ -12,6 +12,7 @@
 namespace {
 
 constexpr uint32_t kDeinitJoinTimeoutMs = 3000;
+constexpr uint32_t kMinimumDeferTimeoutMs = 1;
 
 void defaultRebootExecutor() {
 #if __has_include(<Arduino.h>)
@@ -310,7 +311,6 @@ void ESPRebootManager::taskLoop() {
             continue;
         }
 
-        setStatus(RebootRequestStatus::Evaluating);
         processRequest(request);
     }
 
@@ -318,78 +318,116 @@ void ESPRebootManager::taskLoop() {
 }
 
 void ESPRebootManager::processRequest(const RebootRequestContext& request) {
-    RebootEvaluation evaluation{};
-    evaluation.requestId = request.requestId;
-    copyText(request.reason, evaluation.reason, sizeof(evaluation.reason));
-    evaluation.delayMs = request.delayMs;
+    while( running_.load(std::memory_order_acquire) ){
+        setStatus(RebootRequestStatus::Evaluating);
 
-    const std::vector<GuardEntry> guards = guardSnapshot();
+        RebootEvaluation evaluation{};
+        evaluation.requestId = request.requestId;
+        copyText(request.reason, evaluation.reason, sizeof(evaluation.reason));
+        evaluation.delayMs = request.delayMs;
 
-    for( const GuardEntry& guard : guards ){
-        if( !guard.callback ){
+        const std::vector<GuardEntry> guards = guardSnapshot();
+        bool deferred = false;
+
+        for( const GuardEntry& guard : guards ){
+            if( !guard.callback ){
+                continue;
+            }
+
+            const uint32_t startedMs = nowMs();
+            RebootVote vote = guard.callback(request);
+            const uint32_t elapsedMs = nowMs() - startedMs;
+
+            if( config_.callbackTimeoutMs > 0 && elapsedMs > config_.callbackTimeoutMs ){
+                evaluation.accepted = false;
+                evaluation.code = RebootDecisionCode::CallbackTimeout;
+                formatBlockerName(guard.id, evaluation.blockerName, sizeof(evaluation.blockerName));
+                if( vote.detail[0] != '\0' ){
+                    copyText(vote.detail, evaluation.detail, sizeof(evaluation.detail));
+                } else {
+                    copyText("guard callback exceeded timeout", evaluation.detail, sizeof(evaluation.detail));
+                }
+                evaluation.evaluatedAtMs = nowMs();
+                emitEvaluation(evaluation);
+                setStatus(RebootRequestStatus::Idle);
+                return;
+            }
+
+            if( vote.defer ){
+                const uint32_t deferTimeoutMs =
+                    vote.deferTimeoutMs > 0 ? vote.deferTimeoutMs : kMinimumDeferTimeoutMs;
+                evaluation.accepted = false;
+                evaluation.code = RebootDecisionCode::Deferred;
+                evaluation.deferTimeoutMs = deferTimeoutMs;
+                formatBlockerName(guard.id, evaluation.blockerName, sizeof(evaluation.blockerName));
+                if( vote.detail[0] != '\0' ){
+                    copyText(vote.detail, evaluation.detail, sizeof(evaluation.detail));
+                } else {
+                    copyText("deferred by guard callback", evaluation.detail, sizeof(evaluation.detail));
+                }
+                evaluation.evaluatedAtMs = nowMs();
+                emitEvaluation(evaluation);
+
+                setStatus(RebootRequestStatus::Deferred);
+                vTaskDelay(pdMS_TO_TICKS(deferTimeoutMs));
+                if( !running_.load(std::memory_order_acquire) ){
+                    setStatus(RebootRequestStatus::Idle);
+                    return;
+                }
+
+                deferred = true;
+                break;
+            }
+
+            if( !vote.allow ){
+                evaluation.accepted = false;
+                evaluation.code = RebootDecisionCode::Blocked;
+                formatBlockerName(guard.id, evaluation.blockerName, sizeof(evaluation.blockerName));
+                if( vote.detail[0] != '\0' ){
+                    copyText(vote.detail, evaluation.detail, sizeof(evaluation.detail));
+                } else {
+                    copyText("blocked by guard callback", evaluation.detail, sizeof(evaluation.detail));
+                }
+                evaluation.evaluatedAtMs = nowMs();
+                emitEvaluation(evaluation);
+                setStatus(RebootRequestStatus::Idle);
+                return;
+            }
+        }
+
+        if( deferred ){
             continue;
         }
 
-        const uint32_t startedMs = nowMs();
-        RebootVote vote = guard.callback(request);
-        const uint32_t elapsedMs = nowMs() - startedMs;
+        evaluation.accepted = true;
+        evaluation.code = RebootDecisionCode::Accepted;
+        evaluation.evaluatedAtMs = nowMs();
+        emitEvaluation(evaluation);
 
-        if( config_.callbackTimeoutMs > 0 && elapsedMs > config_.callbackTimeoutMs ){
-            evaluation.accepted = false;
-            evaluation.code = RebootDecisionCode::CallbackTimeout;
-            formatBlockerName(guard.id, evaluation.blockerName, sizeof(evaluation.blockerName));
-            if( vote.detail[0] != '\0' ){
-                copyText(vote.detail, evaluation.detail, sizeof(evaluation.detail));
-            } else {
-                copyText("guard callback exceeded timeout", evaluation.detail, sizeof(evaluation.detail));
-            }
-            evaluation.evaluatedAtMs = nowMs();
-            emitEvaluation(evaluation);
+        setStatus(RebootRequestStatus::Delaying);
+        if( request.delayMs > 0 ){
+            vTaskDelay(pdMS_TO_TICKS(request.delayMs));
+        }
+
+        if( !running_.load(std::memory_order_acquire) ){
             setStatus(RebootRequestStatus::Idle);
             return;
         }
 
-        if( !vote.allow ){
-            evaluation.accepted = false;
-            evaluation.code = RebootDecisionCode::Blocked;
-            formatBlockerName(guard.id, evaluation.blockerName, sizeof(evaluation.blockerName));
-            if( vote.detail[0] != '\0' ){
-                copyText(vote.detail, evaluation.detail, sizeof(evaluation.detail));
-            } else {
-                copyText("blocked by guard callback", evaluation.detail, sizeof(evaluation.detail));
-            }
-            evaluation.evaluatedAtMs = nowMs();
-            emitEvaluation(evaluation);
-            setStatus(RebootRequestStatus::Idle);
-            return;
+        setStatus(RebootRequestStatus::Rebooting);
+        std::function<void()> rebootExecutor;
+
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            rebootExecutor = config_.rebootExecutor;
         }
-    }
 
-    evaluation.accepted = true;
-    evaluation.code = RebootDecisionCode::Accepted;
-    evaluation.evaluatedAtMs = nowMs();
-    emitEvaluation(evaluation);
+        if( rebootExecutor ){
+            rebootExecutor();
+        }
 
-    setStatus(RebootRequestStatus::Delaying);
-    if( request.delayMs > 0 ){
-        vTaskDelay(pdMS_TO_TICKS(request.delayMs));
-    }
-
-    if( !running_.load(std::memory_order_acquire) ){
         setStatus(RebootRequestStatus::Idle);
         return;
-    }
-
-    setStatus(RebootRequestStatus::Rebooting);
-    std::function<void()> rebootExecutor;
-
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        rebootExecutor = config_.rebootExecutor;
-    }
-
-    if( rebootExecutor ){
-        rebootExecutor();
     }
 
     setStatus(RebootRequestStatus::Idle);
