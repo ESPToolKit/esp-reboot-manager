@@ -2,6 +2,11 @@
 
 ESPRebootManager is a centralized reboot coordinator for ESP32 projects. Any module can request a reboot, registered guard callbacks vote whether reboot is safe, and one unified evaluation callback reports the final decision.
 
+## CI / Release / License
+[![CI](https://github.com/ESPToolKit/esp-reboot-manager/actions/workflows/ci.yml/badge.svg)](https://github.com/ESPToolKit/esp-reboot-manager/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/ESPToolKit/esp-reboot-manager?sort=semver)](https://github.com/ESPToolKit/esp-reboot-manager/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE.md)
+
 ## Features
 - Unified guard callback API: `onRebootRequest(...)`.
 - Unified decision event API: `onEvaluation(...)`.
