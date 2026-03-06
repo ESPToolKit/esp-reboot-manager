@@ -1,0 +1,33 @@
+{
+  "name": "ESPRebootManager",
+  "version": "0.1.0",
+  "description": "Centralized reboot request coordination for ESP32 applications.",
+  "keywords": [
+    "esp32",
+    "arduino",
+    "reboot",
+    "restart",
+    "manager",
+    "lifecycle"
+  ],
+  "homepage": "https://github.com/ESPToolKit/esp-reboot-manager",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ESPToolKit/esp-reboot-manager.git"
+  },
+  "license": "MIT",
+  "authors": [
+    {
+      "name": "zekageri"
+    }
+  ],
+  "frameworks": ["arduino"],
+  "platforms": ["espressif32"],
+  "dependencies": [],
+  "headers": ["ESPRebootManager.h"],
+  "build": {
+    "flags": [
+      "-std=gnu++17"
+    ]
+  }
+}
