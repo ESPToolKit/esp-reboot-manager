@@ -31,29 +31,29 @@ void setup() {
 	rebootManager.onEvaluation([](const RebootEvaluation &evaluation) {
 		if (evaluation.accepted) {
 			Serial.printf(
-                "[reboot] accepted id=%lu reason=%s delay=%lu\n",
-                static_cast<unsigned long>(evaluation.requestId),
-                evaluation.reason,
-                static_cast<unsigned long>(evaluation.delayMs)
-            );
+			    "[reboot] accepted id=%lu reason=%s delay=%lu\n",
+			    static_cast<unsigned long>(evaluation.requestId),
+			    evaluation.reason,
+			    static_cast<unsigned long>(evaluation.delayMs)
+			);
 			return;
 		}
 
 		Serial.printf(
-            "[reboot] rejected id=%lu code=%u blocker=%s detail=%s\n",
-            static_cast<unsigned long>(evaluation.requestId),
-            static_cast<unsigned>(evaluation.code),
-            evaluation.blockerName,
-            evaluation.detail
-        );
+		    "[reboot] rejected id=%lu code=%u blocker=%s detail=%s\n",
+		    static_cast<unsigned long>(evaluation.requestId),
+		    static_cast<unsigned>(evaluation.code),
+		    evaluation.blockerName,
+		    evaluation.detail
+		);
 	});
 
 	RebootSubmitResult result = rebootManager.requestReboot("ExampleReason", 1500);
 	Serial.printf(
-        "submit status=%u requestId=%lu\n",
-        static_cast<unsigned>(result.status),
-        static_cast<unsigned long>(result.requestId)
-    );
+	    "submit status=%u requestId=%lu\n",
+	    static_cast<unsigned>(result.status),
+	    static_cast<unsigned long>(result.requestId)
+	);
 }
 
 void loop() {

@@ -8,4 +8,4 @@ void resetRuntime();
 size_t createdTaskCount();
 size_t deletedTaskCount();
 
-}  // namespace test_support
+} // namespace test_support

@@ -15,400 +15,537 @@
 
 namespace {
 
-[[noreturn]] void fail(const std::string& message) {
-    throw std::runtime_error(message);
+[[noreturn]] void fail(const std::string &message) {
+	throw std::runtime_error(message);
 }
 
-void expectTrue(bool condition, const std::string& message) {
-    if( !condition ){
-        fail(message);
-    }
+void expectTrue(bool condition, const std::string &message) {
+	if (!condition) {
+		fail(message);
+	}
 }
 
-void expectFalse(bool condition, const std::string& message) {
-    if( condition ){
-        fail(message);
-    }
+void expectFalse(bool condition, const std::string &message) {
+	if (condition) {
+		fail(message);
+	}
 }
 
 template <typename T>
-void expectEqual(const T& actual, const T& expected, const std::string& message) {
-    if( !(actual == expected) ){
-        fail(message);
-    }
+void expectEqual(const T &actual, const T &expected, const std::string &message) {
+	if (!(actual == expected)) {
+		fail(message);
+	}
 }
 
-bool waitUntil(const std::function<bool()>& predicate, uint32_t timeoutMs) {
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
-    while( std::chrono::steady_clock::now() < deadline ){
-        if( predicate() ){
-            return true;
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
-    return predicate();
+bool waitUntil(const std::function<bool()> &predicate, uint32_t timeoutMs) {
+	const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
+	while (std::chrono::steady_clock::now() < deadline) {
+		if (predicate()) {
+			return true;
+		}
+		std::this_thread::sleep_for(std::chrono::milliseconds(1));
+	}
+	return predicate();
 }
 
 void testInitDeinitLifecycle() {
-    test_support::resetRuntime();
+	test_support::resetRuntime();
 
-    ESPRebootManager manager;
-    expectFalse(manager.isInitialized(), "manager should start uninitialized");
+	ESPRebootManager manager;
+	expectFalse(manager.isInitialized(), "manager should start uninitialized");
 
-    manager.deinit();
-    expectFalse(manager.isInitialized(), "deinit before init should be safe");
+	manager.deinit();
+	expectFalse(manager.isInitialized(), "deinit before init should be safe");
 
-    expectTrue(manager.init(), "init should succeed");
-    expectTrue(manager.isInitialized(), "manager should be initialized");
+	expectTrue(manager.init(), "init should succeed");
+	expectTrue(manager.isInitialized(), "manager should be initialized");
 
-    manager.deinit();
-    expectFalse(manager.isInitialized(), "manager should deinitialize cleanly");
+	manager.deinit();
+	expectFalse(manager.isInitialized(), "manager should deinitialize cleanly");
 
-    manager.deinit();
-    expectFalse(manager.isInitialized(), "deinit should be idempotent");
+	manager.deinit();
+	expectFalse(manager.isInitialized(), "deinit should be idempotent");
 
-    expectTrue(test_support::createdTaskCount() >= static_cast<size_t>(1), "init should create worker task");
+	expectTrue(
+	    test_support::createdTaskCount() >= static_cast<size_t>(1),
+	    "init should create worker task"
+	);
 }
 
 void testCallbackRegistrationAndUnregister() {
-    ESPRebootManager manager;
-    expectTrue(manager.init(), "init should succeed");
+	ESPRebootManager manager;
+	expectTrue(manager.init(), "init should succeed");
 
-    RebootCallbackId guardId = manager.onRebootRequest([](const RebootRequestContext&) {
-        return RebootVote{};
-    });
-    RebootCallbackId evalId = manager.onEvaluation([](const RebootEvaluation&) {});
+	RebootCallbackId guardId =
+	    manager.onRebootRequest([](const RebootRequestContext &) { return RebootVote{}; });
+	RebootCallbackId evalId = manager.onEvaluation([](const RebootEvaluation &) {});
 
-    expectTrue(guardId > 0, "guard callback registration should return valid id");
-    expectTrue(evalId > 0, "evaluation callback registration should return valid id");
+	expectTrue(guardId > 0, "guard callback registration should return valid id");
+	expectTrue(evalId > 0, "evaluation callback registration should return valid id");
 
-    expectTrue(manager.offRebootRequest(guardId), "guard callback should be removable");
-    expectFalse(manager.offRebootRequest(guardId), "removed guard callback should not be removable twice");
+	expectTrue(manager.offRebootRequest(guardId), "guard callback should be removable");
+	expectFalse(
+	    manager.offRebootRequest(guardId),
+	    "removed guard callback should not be removable twice"
+	);
 
-    expectTrue(manager.offEvaluation(evalId), "evaluation callback should be removable");
-    expectFalse(manager.offEvaluation(evalId), "removed evaluation callback should not be removable twice");
+	expectTrue(manager.offEvaluation(evalId), "evaluation callback should be removable");
+	expectFalse(
+	    manager.offEvaluation(evalId),
+	    "removed evaluation callback should not be removable twice"
+	);
 
-    manager.deinit();
+	manager.deinit();
 }
 
 void testRequestValidationAndBusyHandling() {
-    ESPRebootManager manager;
-    ESPRebootManagerConfig cfg{};
-    cfg.rebootExecutor = []() {};
+	ESPRebootManager manager;
+	ESPRebootManagerConfig cfg{};
+	cfg.rebootExecutor = []() {};
 
-    expectTrue(manager.init(cfg), "init should succeed");
+	expectTrue(manager.init(cfg), "init should succeed");
 
-    RebootSubmitResult nullReason = manager.requestReboot(nullptr, 0);
-    expectEqual(nullReason.status, RebootSubmitStatus::InvalidArgument, "null reason should be invalid");
+	RebootSubmitResult nullReason = manager.requestReboot(nullptr, 0);
+	expectEqual(
+	    nullReason.status,
+	    RebootSubmitStatus::InvalidArgument,
+	    "null reason should be invalid"
+	);
 
-    RebootSubmitResult emptyReason = manager.requestReboot("", 0);
-    expectEqual(emptyReason.status, RebootSubmitStatus::InvalidArgument, "empty reason should be invalid");
+	RebootSubmitResult emptyReason = manager.requestReboot("", 0);
+	expectEqual(
+	    emptyReason.status,
+	    RebootSubmitStatus::InvalidArgument,
+	    "empty reason should be invalid"
+	);
 
-    const char* tooLongReason = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890++++";
-    RebootSubmitResult longReason = manager.requestReboot(tooLongReason, 0);
-    expectEqual(longReason.status, RebootSubmitStatus::InvalidArgument, "long reason should be invalid");
+	const char *tooLongReason =
+	    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890++++";
+	RebootSubmitResult longReason = manager.requestReboot(tooLongReason, 0);
+	expectEqual(
+	    longReason.status,
+	    RebootSubmitStatus::InvalidArgument,
+	    "long reason should be invalid"
+	);
 
-    manager.onRebootRequest([](const RebootRequestContext&) {
-        vTaskDelay(pdMS_TO_TICKS(30));
-        return RebootVote{};
-    });
+	manager.onRebootRequest([](const RebootRequestContext &) {
+		vTaskDelay(pdMS_TO_TICKS(30));
+		return RebootVote{};
+	});
 
-    RebootSubmitResult first = manager.requestReboot("normal", 60);
-    expectEqual(first.status, RebootSubmitStatus::Queued, "first request should queue");
+	RebootSubmitResult first = manager.requestReboot("normal", 60);
+	expectEqual(first.status, RebootSubmitStatus::Queued, "first request should queue");
 
-    RebootSubmitResult second = manager.requestReboot("parallel", 0);
-    expectEqual(second.status, RebootSubmitStatus::Busy, "second request should return busy while first is active");
+	RebootSubmitResult second = manager.requestReboot("parallel", 0);
+	expectEqual(
+	    second.status,
+	    RebootSubmitStatus::Busy,
+	    "second request should return busy while first is active"
+	);
 
-    expectTrue(waitUntil([&manager]() { return manager.rebootStatus() == RebootRequestStatus::Idle; }, 500),
-               "request should eventually return to idle");
+	expectTrue(
+	    waitUntil(
+	        [&manager]() { return manager.rebootStatus() == RebootRequestStatus::Idle; },
+	        500
+	    ),
+	    "request should eventually return to idle"
+	);
 
-    manager.deinit();
+	manager.deinit();
 }
 
 void testAcceptedFlowAndRebootExecution() {
-    ESPRebootManager manager;
+	ESPRebootManager manager;
 
-    std::atomic<int> evaluationCount{0};
-    std::atomic<int> rebootCount{0};
-    RebootEvaluation captured{};
+	std::atomic<int> evaluationCount{0};
+	std::atomic<int> rebootCount{0};
+	RebootEvaluation captured{};
 
-    ESPRebootManagerConfig cfg{};
-    cfg.rebootExecutor = [&rebootCount]() {
-        rebootCount.fetch_add(1, std::memory_order_relaxed);
-    };
+	ESPRebootManagerConfig cfg{};
+	cfg.rebootExecutor = [&rebootCount]() { rebootCount.fetch_add(1, std::memory_order_relaxed); };
 
-    expectTrue(manager.init(cfg), "init should succeed");
+	expectTrue(manager.init(cfg), "init should succeed");
 
-    manager.onRebootRequest([](const RebootRequestContext&) {
-        vTaskDelay(pdMS_TO_TICKS(5));
-        return RebootVote{};
-    });
-    manager.onRebootRequest([](const RebootRequestContext&) {
-        return RebootVote{};
-    });
+	manager.onRebootRequest([](const RebootRequestContext &) {
+		vTaskDelay(pdMS_TO_TICKS(5));
+		return RebootVote{};
+	});
+	manager.onRebootRequest([](const RebootRequestContext &) { return RebootVote{}; });
 
-    manager.onEvaluation([&evaluationCount, &captured](const RebootEvaluation& evaluation) {
-        captured = evaluation;
-        evaluationCount.fetch_add(1, std::memory_order_relaxed);
-    });
+	manager.onEvaluation([&evaluationCount, &captured](const RebootEvaluation &evaluation) {
+		captured = evaluation;
+		evaluationCount.fetch_add(1, std::memory_order_relaxed);
+	});
 
-    RebootSubmitResult result = manager.requestReboot("accepted", 20);
-    expectEqual(result.status, RebootSubmitStatus::Queued, "accepted test request should queue");
+	RebootSubmitResult result = manager.requestReboot("accepted", 20);
+	expectEqual(result.status, RebootSubmitStatus::Queued, "accepted test request should queue");
 
-    expectTrue(waitUntil([&evaluationCount]() { return evaluationCount.load(std::memory_order_relaxed) == 1; }, 500),
-               "evaluation callback should fire once for accepted request");
+	expectTrue(
+	    waitUntil(
+	        [&evaluationCount]() { return evaluationCount.load(std::memory_order_relaxed) == 1; },
+	        500
+	    ),
+	    "evaluation callback should fire once for accepted request"
+	);
 
-    expectTrue(captured.accepted, "accepted flow should report accepted evaluation");
-    expectEqual(captured.code, RebootDecisionCode::Accepted, "accepted flow should use Accepted code");
+	expectTrue(captured.accepted, "accepted flow should report accepted evaluation");
+	expectEqual(
+	    captured.code,
+	    RebootDecisionCode::Accepted,
+	    "accepted flow should use Accepted code"
+	);
 
-    expectTrue(waitUntil([&rebootCount]() { return rebootCount.load(std::memory_order_relaxed) == 1; }, 500),
-               "accepted flow should invoke reboot executor once");
+	expectTrue(
+	    waitUntil(
+	        [&rebootCount]() { return rebootCount.load(std::memory_order_relaxed) == 1; },
+	        500
+	    ),
+	    "accepted flow should invoke reboot executor once"
+	);
 
-    expectTrue(waitUntil([&manager]() { return manager.rebootStatus() == RebootRequestStatus::Idle; }, 500),
-               "accepted flow should return to idle after executor returns");
-    expectFalse(manager.isRebootRequested(), "isRebootRequested should be false in idle state");
+	expectTrue(
+	    waitUntil(
+	        [&manager]() { return manager.rebootStatus() == RebootRequestStatus::Idle; },
+	        500
+	    ),
+	    "accepted flow should return to idle after executor returns"
+	);
+	expectFalse(manager.isRebootRequested(), "isRebootRequested should be false in idle state");
 
-    manager.deinit();
+	manager.deinit();
 }
 
 void testBlockedFlow() {
-    ESPRebootManager manager;
+	ESPRebootManager manager;
 
-    std::atomic<int> rebootCount{0};
-    RebootEvaluation captured{};
+	std::atomic<int> rebootCount{0};
+	RebootEvaluation captured{};
 
-    ESPRebootManagerConfig cfg{};
-    cfg.rebootExecutor = [&rebootCount]() {
-        rebootCount.fetch_add(1, std::memory_order_relaxed);
-    };
+	ESPRebootManagerConfig cfg{};
+	cfg.rebootExecutor = [&rebootCount]() { rebootCount.fetch_add(1, std::memory_order_relaxed); };
 
-    expectTrue(manager.init(cfg), "init should succeed");
+	expectTrue(manager.init(cfg), "init should succeed");
 
-    manager.onRebootRequest([](const RebootRequestContext&) {
-        return RebootVote{};
-    });
+	manager.onRebootRequest([](const RebootRequestContext &) { return RebootVote{}; });
 
-    manager.onRebootRequest([](const RebootRequestContext&) {
-        RebootVote vote{};
-        vote.allow = false;
-        std::snprintf(vote.detail, sizeof(vote.detail), "module2 not ready");
-        return vote;
-    });
+	manager.onRebootRequest([](const RebootRequestContext &) {
+		RebootVote vote{};
+		vote.allow = false;
+		std::snprintf(vote.detail, sizeof(vote.detail), "module2 not ready");
+		return vote;
+	});
 
-    std::atomic<int> evaluationCount{0};
-    manager.onEvaluation([&captured, &evaluationCount](const RebootEvaluation& evaluation) {
-        captured = evaluation;
-        evaluationCount.fetch_add(1, std::memory_order_relaxed);
-    });
+	std::atomic<int> evaluationCount{0};
+	manager.onEvaluation([&captured, &evaluationCount](const RebootEvaluation &evaluation) {
+		captured = evaluation;
+		evaluationCount.fetch_add(1, std::memory_order_relaxed);
+	});
 
-    RebootSubmitResult result = manager.requestReboot("blocked", 20);
-    expectEqual(result.status, RebootSubmitStatus::Queued, "blocked test request should queue");
+	RebootSubmitResult result = manager.requestReboot("blocked", 20);
+	expectEqual(result.status, RebootSubmitStatus::Queued, "blocked test request should queue");
 
-    expectTrue(waitUntil([&evaluationCount]() { return evaluationCount.load(std::memory_order_relaxed) == 1; }, 500),
-               "blocked request should emit exactly one evaluation");
+	expectTrue(
+	    waitUntil(
+	        [&evaluationCount]() { return evaluationCount.load(std::memory_order_relaxed) == 1; },
+	        500
+	    ),
+	    "blocked request should emit exactly one evaluation"
+	);
 
-    expectFalse(captured.accepted, "blocked flow should report rejected evaluation");
-    expectEqual(captured.code, RebootDecisionCode::Blocked, "blocked flow should report blocked decision code");
-    expectTrue(std::strstr(captured.detail, "module2") != nullptr, "blocked detail should include blocker reason");
+	expectFalse(captured.accepted, "blocked flow should report rejected evaluation");
+	expectEqual(
+	    captured.code,
+	    RebootDecisionCode::Blocked,
+	    "blocked flow should report blocked decision code"
+	);
+	expectTrue(
+	    std::strstr(captured.detail, "module2") != nullptr,
+	    "blocked detail should include blocker reason"
+	);
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(20));
-    expectEqual(rebootCount.load(std::memory_order_relaxed), 0, "blocked flow must not invoke reboot executor");
+	std::this_thread::sleep_for(std::chrono::milliseconds(20));
+	expectEqual(
+	    rebootCount.load(std::memory_order_relaxed),
+	    0,
+	    "blocked flow must not invoke reboot executor"
+	);
 
-    expectTrue(waitUntil([&manager]() { return manager.rebootStatus() == RebootRequestStatus::Idle; }, 200),
-               "blocked flow should return to idle");
+	expectTrue(
+	    waitUntil(
+	        [&manager]() { return manager.rebootStatus() == RebootRequestStatus::Idle; },
+	        200
+	    ),
+	    "blocked flow should return to idle"
+	);
 
-    manager.deinit();
+	manager.deinit();
 }
 
 void testCallbackTimeoutFlow() {
-    ESPRebootManager manager;
+	ESPRebootManager manager;
 
-    std::atomic<int> rebootCount{0};
-    RebootEvaluation captured{};
+	std::atomic<int> rebootCount{0};
+	RebootEvaluation captured{};
 
-    ESPRebootManagerConfig cfg{};
-    cfg.callbackTimeoutMs = 10;
-    cfg.rebootExecutor = [&rebootCount]() {
-        rebootCount.fetch_add(1, std::memory_order_relaxed);
-    };
+	ESPRebootManagerConfig cfg{};
+	cfg.callbackTimeoutMs = 10;
+	cfg.rebootExecutor = [&rebootCount]() { rebootCount.fetch_add(1, std::memory_order_relaxed); };
 
-    expectTrue(manager.init(cfg), "init should succeed");
+	expectTrue(manager.init(cfg), "init should succeed");
 
-    manager.onRebootRequest([](const RebootRequestContext&) {
-        vTaskDelay(pdMS_TO_TICKS(25));
-        return RebootVote{};
-    });
+	manager.onRebootRequest([](const RebootRequestContext &) {
+		vTaskDelay(pdMS_TO_TICKS(25));
+		return RebootVote{};
+	});
 
-    std::atomic<int> evaluationCount{0};
-    manager.onEvaluation([&captured, &evaluationCount](const RebootEvaluation& evaluation) {
-        captured = evaluation;
-        evaluationCount.fetch_add(1, std::memory_order_relaxed);
-    });
+	std::atomic<int> evaluationCount{0};
+	manager.onEvaluation([&captured, &evaluationCount](const RebootEvaluation &evaluation) {
+		captured = evaluation;
+		evaluationCount.fetch_add(1, std::memory_order_relaxed);
+	});
 
-    RebootSubmitResult result = manager.requestReboot("timeout", 0);
-    expectEqual(result.status, RebootSubmitStatus::Queued, "timeout test request should queue");
+	RebootSubmitResult result = manager.requestReboot("timeout", 0);
+	expectEqual(result.status, RebootSubmitStatus::Queued, "timeout test request should queue");
 
-    expectTrue(waitUntil([&evaluationCount]() { return evaluationCount.load(std::memory_order_relaxed) == 1; }, 500),
-               "timeout request should emit one evaluation");
+	expectTrue(
+	    waitUntil(
+	        [&evaluationCount]() { return evaluationCount.load(std::memory_order_relaxed) == 1; },
+	        500
+	    ),
+	    "timeout request should emit one evaluation"
+	);
 
-    expectFalse(captured.accepted, "timeout flow should reject the reboot");
-    expectEqual(captured.code, RebootDecisionCode::CallbackTimeout, "timeout flow should report callback timeout");
-    expectEqual(rebootCount.load(std::memory_order_relaxed), 0, "timeout flow must not reboot");
+	expectFalse(captured.accepted, "timeout flow should reject the reboot");
+	expectEqual(
+	    captured.code,
+	    RebootDecisionCode::CallbackTimeout,
+	    "timeout flow should report callback timeout"
+	);
+	expectEqual(rebootCount.load(std::memory_order_relaxed), 0, "timeout flow must not reboot");
 
-    manager.deinit();
+	manager.deinit();
 }
 
 void testDeferredFlowRetriesFromFirstGuard() {
-    ESPRebootManager manager;
+	ESPRebootManager manager;
 
-    std::atomic<int> rebootCount{0};
-    std::atomic<int> firstGuardCalls{0};
-    std::atomic<int> secondGuardCalls{0};
-    std::atomic<int> thirdGuardCalls{0};
-    std::atomic<int> deferredEvaluations{0};
-    std::atomic<int> acceptedEvaluations{0};
-    std::atomic<uint32_t> capturedDeferTimeoutMs{0};
+	std::atomic<int> rebootCount{0};
+	std::atomic<int> firstGuardCalls{0};
+	std::atomic<int> secondGuardCalls{0};
+	std::atomic<int> thirdGuardCalls{0};
+	std::atomic<int> deferredEvaluations{0};
+	std::atomic<int> acceptedEvaluations{0};
+	std::atomic<uint32_t> capturedDeferTimeoutMs{0};
 
-    ESPRebootManagerConfig cfg{};
-    cfg.rebootExecutor = [&rebootCount]() {
-        rebootCount.fetch_add(1, std::memory_order_relaxed);
-    };
+	ESPRebootManagerConfig cfg{};
+	cfg.rebootExecutor = [&rebootCount]() { rebootCount.fetch_add(1, std::memory_order_relaxed); };
 
-    expectTrue(manager.init(cfg), "init should succeed");
+	expectTrue(manager.init(cfg), "init should succeed");
 
-    manager.onRebootRequest([&firstGuardCalls](const RebootRequestContext&) {
-        firstGuardCalls.fetch_add(1, std::memory_order_relaxed);
-        return RebootVote{};
-    });
+	manager.onRebootRequest([&firstGuardCalls](const RebootRequestContext &) {
+		firstGuardCalls.fetch_add(1, std::memory_order_relaxed);
+		return RebootVote{};
+	});
 
-    manager.onRebootRequest([&secondGuardCalls](const RebootRequestContext&) {
-        const int callNumber = secondGuardCalls.fetch_add(1, std::memory_order_relaxed) + 1;
-        RebootVote vote{};
-        if( callNumber == 1 ){
-            vote.defer = true;
-            vote.deferTimeoutMs = 60;
-            std::snprintf(vote.detail, sizeof(vote.detail), "waiting for storage flush");
-        }
-        return vote;
-    });
+	manager.onRebootRequest([&secondGuardCalls](const RebootRequestContext &) {
+		const int callNumber = secondGuardCalls.fetch_add(1, std::memory_order_relaxed) + 1;
+		RebootVote vote{};
+		if (callNumber == 1) {
+			vote.defer = true;
+			vote.deferTimeoutMs = 60;
+			std::snprintf(vote.detail, sizeof(vote.detail), "waiting for storage flush");
+		}
+		return vote;
+	});
 
-    manager.onRebootRequest([&thirdGuardCalls](const RebootRequestContext&) {
-        thirdGuardCalls.fetch_add(1, std::memory_order_relaxed);
-        return RebootVote{};
-    });
+	manager.onRebootRequest([&thirdGuardCalls](const RebootRequestContext &) {
+		thirdGuardCalls.fetch_add(1, std::memory_order_relaxed);
+		return RebootVote{};
+	});
 
-    manager.onEvaluation([&deferredEvaluations, &acceptedEvaluations, &capturedDeferTimeoutMs](const RebootEvaluation& evaluation) {
-        if( evaluation.code == RebootDecisionCode::Deferred ){
-            deferredEvaluations.fetch_add(1, std::memory_order_relaxed);
-            capturedDeferTimeoutMs.store(evaluation.deferTimeoutMs, std::memory_order_relaxed);
-        }
-        if( evaluation.code == RebootDecisionCode::Accepted ){
-            acceptedEvaluations.fetch_add(1, std::memory_order_relaxed);
-        }
-    });
+	manager.onEvaluation([&deferredEvaluations,
+	                      &acceptedEvaluations,
+	                      &capturedDeferTimeoutMs](const RebootEvaluation &evaluation) {
+		if (evaluation.code == RebootDecisionCode::Deferred) {
+			deferredEvaluations.fetch_add(1, std::memory_order_relaxed);
+			capturedDeferTimeoutMs.store(evaluation.deferTimeoutMs, std::memory_order_relaxed);
+		}
+		if (evaluation.code == RebootDecisionCode::Accepted) {
+			acceptedEvaluations.fetch_add(1, std::memory_order_relaxed);
+		}
+	});
 
-    RebootSubmitResult result = manager.requestReboot("deferred-flow", 0);
-    expectEqual(result.status, RebootSubmitStatus::Queued, "deferred test request should queue");
+	RebootSubmitResult result = manager.requestReboot("deferred-flow", 0);
+	expectEqual(result.status, RebootSubmitStatus::Queued, "deferred test request should queue");
 
-    expectTrue(waitUntil([&manager]() { return manager.rebootStatus() == RebootRequestStatus::Deferred; }, 300),
-               "deferred flow should transition to Deferred status");
+	expectTrue(
+	    waitUntil(
+	        [&manager]() { return manager.rebootStatus() == RebootRequestStatus::Deferred; },
+	        300
+	    ),
+	    "deferred flow should transition to Deferred status"
+	);
 
-    expectTrue(waitUntil([&rebootCount]() { return rebootCount.load(std::memory_order_relaxed) == 1; }, 1000),
-               "deferred flow should eventually reboot once guards allow");
+	expectTrue(
+	    waitUntil(
+	        [&rebootCount]() { return rebootCount.load(std::memory_order_relaxed) == 1; },
+	        1000
+	    ),
+	    "deferred flow should eventually reboot once guards allow"
+	);
 
-    expectEqual(firstGuardCalls.load(std::memory_order_relaxed), 2, "first guard should run once per pass");
-    expectEqual(secondGuardCalls.load(std::memory_order_relaxed), 2, "second guard should run once per pass");
-    expectEqual(thirdGuardCalls.load(std::memory_order_relaxed), 1, "third guard should be skipped on deferred pass");
-    expectEqual(deferredEvaluations.load(std::memory_order_relaxed), 1, "deferred flow should emit one deferred evaluation");
-    expectEqual(acceptedEvaluations.load(std::memory_order_relaxed), 1, "deferred flow should emit one accepted evaluation");
-    expectEqual(capturedDeferTimeoutMs.load(std::memory_order_relaxed), 60U, "evaluation should expose defer timeout");
+	expectEqual(
+	    firstGuardCalls.load(std::memory_order_relaxed),
+	    2,
+	    "first guard should run once per pass"
+	);
+	expectEqual(
+	    secondGuardCalls.load(std::memory_order_relaxed),
+	    2,
+	    "second guard should run once per pass"
+	);
+	expectEqual(
+	    thirdGuardCalls.load(std::memory_order_relaxed),
+	    1,
+	    "third guard should be skipped on deferred pass"
+	);
+	expectEqual(
+	    deferredEvaluations.load(std::memory_order_relaxed),
+	    1,
+	    "deferred flow should emit one deferred evaluation"
+	);
+	expectEqual(
+	    acceptedEvaluations.load(std::memory_order_relaxed),
+	    1,
+	    "deferred flow should emit one accepted evaluation"
+	);
+	expectEqual(
+	    capturedDeferTimeoutMs.load(std::memory_order_relaxed),
+	    60U,
+	    "evaluation should expose defer timeout"
+	);
 
-    expectTrue(waitUntil([&manager]() { return manager.rebootStatus() == RebootRequestStatus::Idle; }, 300),
-               "deferred flow should return to idle");
+	expectTrue(
+	    waitUntil(
+	        [&manager]() { return manager.rebootStatus() == RebootRequestStatus::Idle; },
+	        300
+	    ),
+	    "deferred flow should return to idle"
+	);
 
-    manager.deinit();
+	manager.deinit();
 }
 
 void testDeferredStateRemainsBusyForNewRequests() {
-    ESPRebootManager manager;
+	ESPRebootManager manager;
 
-    std::atomic<int> guardCalls{0};
+	std::atomic<int> guardCalls{0};
 
-    ESPRebootManagerConfig cfg{};
-    cfg.rebootExecutor = []() {};
-    expectTrue(manager.init(cfg), "init should succeed");
+	ESPRebootManagerConfig cfg{};
+	cfg.rebootExecutor = []() {};
+	expectTrue(manager.init(cfg), "init should succeed");
 
-    manager.onRebootRequest([&guardCalls](const RebootRequestContext&) {
-        const int callNumber = guardCalls.fetch_add(1, std::memory_order_relaxed) + 1;
-        RebootVote vote{};
-        if( callNumber == 1 ){
-            vote.defer = true;
-            vote.deferTimeoutMs = 80;
-            std::snprintf(vote.detail, sizeof(vote.detail), "finish write queue");
-        }
-        return vote;
-    });
+	manager.onRebootRequest([&guardCalls](const RebootRequestContext &) {
+		const int callNumber = guardCalls.fetch_add(1, std::memory_order_relaxed) + 1;
+		RebootVote vote{};
+		if (callNumber == 1) {
+			vote.defer = true;
+			vote.deferTimeoutMs = 80;
+			std::snprintf(vote.detail, sizeof(vote.detail), "finish write queue");
+		}
+		return vote;
+	});
 
-    RebootSubmitResult first = manager.requestReboot("primary", 0);
-    expectEqual(first.status, RebootSubmitStatus::Queued, "first deferred request should queue");
+	RebootSubmitResult first = manager.requestReboot("primary", 0);
+	expectEqual(first.status, RebootSubmitStatus::Queued, "first deferred request should queue");
 
-    expectTrue(waitUntil([&manager]() { return manager.rebootStatus() == RebootRequestStatus::Deferred; }, 300),
-               "manager should expose Deferred status during retry wait");
+	expectTrue(
+	    waitUntil(
+	        [&manager]() { return manager.rebootStatus() == RebootRequestStatus::Deferred; },
+	        300
+	    ),
+	    "manager should expose Deferred status during retry wait"
+	);
 
-    RebootSubmitResult second = manager.requestReboot("secondary", 0);
-    expectEqual(second.status, RebootSubmitStatus::Busy, "new request should be busy while first request is deferred");
+	RebootSubmitResult second = manager.requestReboot("secondary", 0);
+	expectEqual(
+	    second.status,
+	    RebootSubmitStatus::Busy,
+	    "new request should be busy while first request is deferred"
+	);
 
-    expectTrue(waitUntil([&manager]() { return manager.rebootStatus() == RebootRequestStatus::Idle; }, 1000),
-               "deferred request should eventually complete");
+	expectTrue(
+	    waitUntil(
+	        [&manager]() { return manager.rebootStatus() == RebootRequestStatus::Idle; },
+	        1000
+	    ),
+	    "deferred request should eventually complete"
+	);
 
-    manager.deinit();
+	manager.deinit();
 }
 
 void testPollingAndLastEvaluation() {
-    ESPRebootManager manager;
-    expectTrue(manager.init(), "init should succeed");
+	ESPRebootManager manager;
+	expectTrue(manager.init(), "init should succeed");
 
-    manager.onRebootRequest([](const RebootRequestContext&) {
-        RebootVote vote{};
-        vote.allow = false;
-        std::snprintf(vote.detail, sizeof(vote.detail), "storage flush in progress");
-        return vote;
-    });
+	manager.onRebootRequest([](const RebootRequestContext &) {
+		RebootVote vote{};
+		vote.allow = false;
+		std::snprintf(vote.detail, sizeof(vote.detail), "storage flush in progress");
+		return vote;
+	});
 
-    RebootSubmitResult result = manager.requestReboot("poll-check", 0);
-    expectEqual(result.status, RebootSubmitStatus::Queued, "poll-check request should queue");
+	RebootSubmitResult result = manager.requestReboot("poll-check", 0);
+	expectEqual(result.status, RebootSubmitStatus::Queued, "poll-check request should queue");
 
-    expectTrue(manager.isRebootRequested(), "manager should report requested state immediately after queue");
+	expectTrue(
+	    manager.isRebootRequested(),
+	    "manager should report requested state immediately after queue"
+	);
 
-    expectTrue(waitUntil([&manager]() { return manager.rebootStatus() == RebootRequestStatus::Idle; }, 500),
-               "rejected request should return to idle");
+	expectTrue(
+	    waitUntil(
+	        [&manager]() { return manager.rebootStatus() == RebootRequestStatus::Idle; },
+	        500
+	    ),
+	    "rejected request should return to idle"
+	);
 
-    RebootEvaluation last = manager.lastEvaluation();
-    expectFalse(last.accepted, "last evaluation should report rejection");
-    expectEqual(last.code, RebootDecisionCode::Blocked, "last evaluation should preserve blocked code");
-    expectTrue(std::strstr(last.detail, "storage") != nullptr, "last evaluation should preserve blocker detail");
+	RebootEvaluation last = manager.lastEvaluation();
+	expectFalse(last.accepted, "last evaluation should report rejection");
+	expectEqual(
+	    last.code,
+	    RebootDecisionCode::Blocked,
+	    "last evaluation should preserve blocked code"
+	);
+	expectTrue(
+	    std::strstr(last.detail, "storage") != nullptr,
+	    "last evaluation should preserve blocker detail"
+	);
 
-    manager.deinit();
+	manager.deinit();
 }
 
-}  // namespace
+} // namespace
 
 int main() {
-    try {
-        testInitDeinitLifecycle();
-        testCallbackRegistrationAndUnregister();
-        testRequestValidationAndBusyHandling();
-        testAcceptedFlowAndRebootExecution();
-        testBlockedFlow();
-        testCallbackTimeoutFlow();
-        testDeferredFlowRetriesFromFirstGuard();
-        testDeferredStateRemainsBusyForNewRequests();
-        testPollingAndLastEvaluation();
-    } catch( const std::exception& exception ){
-        std::cerr << "FAIL: " << exception.what() << '\n';
-        return 1;
-    }
+	try {
+		testInitDeinitLifecycle();
+		testCallbackRegistrationAndUnregister();
+		testRequestValidationAndBusyHandling();
+		testAcceptedFlowAndRebootExecution();
+		testBlockedFlow();
+		testCallbackTimeoutFlow();
+		testDeferredFlowRetriesFromFirstGuard();
+		testDeferredStateRemainsBusyForNewRequests();
+		testPollingAndLastEvaluation();
+	} catch (const std::exception &exception) {
+		std::cerr << "FAIL: " << exception.what() << '\n';
+		return 1;
+	}
 
-    std::cout << "All ESPRebootManager tests passed\n";
-    return 0;
+	std::cout << "All ESPRebootManager tests passed\n";
+	return 0;
 }

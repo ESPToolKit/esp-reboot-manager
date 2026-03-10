@@ -35,12 +35,12 @@ void setup() {
 
 	rebootManager.onEvaluation([](const RebootEvaluation &evaluation) {
 		Serial.printf(
-            "[evaluation] accepted=%u code=%u blocker=%s detail=%s\n",
-            static_cast<unsigned>(evaluation.accepted),
-            static_cast<unsigned>(evaluation.code),
-            evaluation.blockerName,
-            evaluation.detail
-        );
+		    "[evaluation] accepted=%u code=%u blocker=%s detail=%s\n",
+		    static_cast<unsigned>(evaluation.accepted),
+		    static_cast<unsigned>(evaluation.code),
+		    evaluation.blockerName,
+		    evaluation.detail
+		);
 	});
 
 	RebootSubmitResult result = rebootManager.requestReboot("simulate-timeout", 0);
@@ -57,11 +57,11 @@ void loop() {
 	if (rebootManager.rebootStatus() == RebootRequestStatus::Idle) {
 		const RebootEvaluation latest = rebootManager.lastEvaluation();
 		Serial.printf(
-            "final accepted=%u code=%u detail=%s\n",
-            static_cast<unsigned>(latest.accepted),
-            static_cast<unsigned>(latest.code),
-            latest.detail
-        );
+		    "final accepted=%u code=%u detail=%s\n",
+		    static_cast<unsigned>(latest.accepted),
+		    static_cast<unsigned>(latest.code),
+		    latest.detail
+		);
 		printedFinal = true;
 	}
 
