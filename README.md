@@ -101,5 +101,12 @@ If any guard rejects (or times out), the flow is:
 - `allow=false`: request is blocked immediately and reboot does not proceed.
 - `defer=true`: request is deferred immediately, remaining guards are skipped for the current pass, and evaluation restarts from the first guard after `deferTimeoutMs` (minimum 1ms when omitted/0).
 
+## Formatting Baseline
+
+This repository follows the firmware formatting baseline from `esptoolkit-template`:
+- `.clang-format` is the source of truth for C/C++/INO layout.
+- `.editorconfig` enforces tabs (`tab_width = 4`), LF endings, and final newline.
+- Format all tracked firmware sources with `bash scripts/format_cpp.sh`.
+
 ## License
 MIT - see [LICENSE.md](LICENSE.md).
